@@ -48,8 +48,8 @@ class TestProjection(ComparisonTestCase):
         assert projected.crs == projection
 
         xs, ys, ang, ms = (vectorfield.dimension_values(i) for i in range(4))
-        us = np.sin(ang) * -ms
-        vs = np.cos(ang) * -ms
+        us = np.cos(ang) * ms
+        vs = np.sin(ang) * ms
         u, v = projection.transform_vectors(crs, xs, ys, us, vs)
         a, m = np.arctan2(v, u).T, np.hypot(u, v).T
 
