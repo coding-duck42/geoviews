@@ -1,5 +1,6 @@
 from contextlib import suppress
 
+import cartopy
 import numpy as np
 import shapely
 import shapely.geometry as sgeom
@@ -28,8 +29,9 @@ line_types = (MultiLineString, LineString)
 poly_types = (MultiPolygon, Polygon, LinearRing)
 
 
-shapely_version = Version(shapely.__version__)
-shapely_v2 = shapely_version >= Version("2")
+SHAPELY_VERSION = Version(shapely.__version__).release
+SHAPELY_GE_2_0_0 = SHAPELY_VERSION >= (2, 0, 0)
+CARTOPY_VERSION = Version(cartopy.__version__).release
 
 
 def wrap_lons(lons, base, period):
@@ -37,6 +39,17 @@ def wrap_lons(lons, base, period):
     """
     lons = lons.astype(np.float64)
     return ((lons - base + period * 2) % period) + base
+
+
+def wrap_cylindrical_projection_lons(src_proj, x1, x2, base=-180.0, period=360.0):
+    # Wrap longitudes
+    cx1, cx2 = src_proj.x_limits
+    if isinstance(src_proj, ccrs._CylindricalProjection):
+        lons = wrap_lons(np.linspace(x1, x2, 10000), base, period)
+        x1, x2 = lons.min(), lons.max()
+        x1 = max(x1, cx1)
+        x2 = min(x2, cx2)
+    return x1, x2
 
 
 def expand_geoms(geoms):
@@ -74,13 +87,7 @@ def project_extents(extents, src_proj, dest_proj, tol=1e-6):
     y2 -= tol
 
     # Wrap longitudes
-    cx1, cx2 = src_proj.x_limits
-    if isinstance(src_proj, ccrs._CylindricalProjection):
-        lons = wrap_lons(np.linspace(x1, x2, 10000), -180., 360.)
-        x1, x2 = lons.min(), lons.max()
-    else:
-        x1 = max(x1, cx1)
-        x2 = min(x2, cx2)
+    x1, x2 = wrap_cylindrical_projection_lons(src_proj, x1, x2)
 
     domain_in_src_proj = Polygon([[x1, y1], [x2, y1],
                                   [x2, y2], [x1, y2],
@@ -336,7 +343,7 @@ def geom_to_arr(geom):
     # shapely 1.8.0 deprecated `array_interface` and
     # unfortunately also introduced a bug in the `array_interface_base`
     # property which raised an error as soon as it was called.
-    if shapely_version < Version('1.8.0'):
+    if SHAPELY_VERSION < (1, 8, 0):
         if hasattr(geom, 'array_interface'):
             data = geom.array_interface()
             return np.array(data['data']).reshape(data['shape'])[:, :2]
@@ -358,7 +365,7 @@ def geom_length(geom):
     if hasattr(geom, 'exterior'):
         geom = geom.exterior
     # As of shapely 1.8.0: LineString, LinearRing (and GeometryCollection?)
-    if shapely_version < Version('1.8.0'):
+    if SHAPELY_VERSION < (1, 8, 0):
         if not geom.geom_type.startswith('Multi') and hasattr(geom, 'array_interface_base'):
             return len(geom.array_interface_base['data'])//2
     elif not geom.geom_type.startswith('Multi'):
